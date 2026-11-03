@@ -65,7 +65,7 @@ export default function Home() {
   const [activeCategory, setActiveCategory] = useState('Semua bookmark');
   const [query, setQuery] = useState('');
   const [dark, setDark] = useState(true);
-  const [bookmarks, setBookmarks] = useState(initialBookmarks);
+  const [bookmarks, setBookmarks] = useState([]);
   const [bookmarksLoaded, setBookmarksLoaded] = useState(false);
   const [modal, setModal] = useState(null);
   const [arrangeMode, setArrangeMode] = useState(false);
@@ -103,26 +103,38 @@ export default function Home() {
     async function initAuthAndData() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        setUser(session?.user || null);
+        const currentUser = session?.user || null;
+        setUser(currentUser);
 
-        supabase.auth.onAuthStateChange((_event, session) => {
-          setUser(session?.user || null);
+        supabase.auth.onAuthStateChange(async (_event, session) => {
+          const newUser = session?.user || null;
+          setUser(newUser);
         });
 
-        const remoteData = await fetchBookmarksFromSupabase();
-        if (remoteData && remoteData.length > 0) {
-          setBookmarks(remoteData);
-        } else {
-          const savedBookmarks = window.localStorage.getItem('lokalinks-bookmarks');
-          if (savedBookmarks) setBookmarks(JSON.parse(savedBookmarks));
+        if (currentUser) {
+          const remoteData = await fetchBookmarksFromSupabase(currentUser.id);
+          const cacheKey = `lokalinks-bookmarks-${currentUser.id}`;
+          const orderKey = `lokalinks-order-${currentUser.id}`;
+          const collapseKey = `lokalinks-collapsed-${currentUser.id}`;
+
+          if (remoteData && remoteData.length > 0) {
+            setBookmarks(remoteData);
+          } else {
+            const savedBookmarks = window.localStorage.getItem(cacheKey);
+            if (savedBookmarks) {
+              setBookmarks(JSON.parse(savedBookmarks));
+            } else {
+              // First time user login fallback to initialBookmarks tagged with their user_id
+              setBookmarks(initialBookmarks);
+            }
+          }
+          const savedOrder = window.localStorage.getItem(orderKey);
+          const savedCollapsed = window.localStorage.getItem(collapseKey);
+          if (savedOrder) setOrderMap(JSON.parse(savedOrder));
+          if (savedCollapsed) setCollapsedSections(JSON.parse(savedCollapsed));
         }
-        const savedOrder = window.localStorage.getItem('lokalinks-order');
-        const savedCollapsed = window.localStorage.getItem('lokalinks-collapsed-sections');
-        if (savedOrder) setOrderMap(JSON.parse(savedOrder));
-        if (savedCollapsed) setCollapsedSections(JSON.parse(savedCollapsed));
-      } catch {
-        const savedBookmarks = window.localStorage.getItem('lokalinks-bookmarks');
-        if (savedBookmarks) setBookmarks(JSON.parse(savedBookmarks));
+      } catch (err) {
+        console.error('Auth/Data init error:', err);
       }
       setAuthLoading(false);
       setBookmarksLoaded(true);
@@ -131,24 +143,28 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (bookmarksLoaded) {
+    if (bookmarksLoaded && user) {
       try {
-        window.localStorage.setItem('lokalinks-bookmarks', JSON.stringify(bookmarks));
+        window.localStorage.setItem(`lokalinks-bookmarks-${user.id}`, JSON.stringify(bookmarks));
       } catch { /* optional */ }
     }
-  }, [bookmarks, bookmarksLoaded]);
+  }, [bookmarks, bookmarksLoaded, user]);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem('lokalinks-order', JSON.stringify(orderMap));
-    } catch { /* optional */ }
-  }, [orderMap]);
+    if (user) {
+      try {
+        window.localStorage.setItem(`lokalinks-order-${user.id}`, JSON.stringify(orderMap));
+      } catch { /* optional */ }
+    }
+  }, [orderMap, user]);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem('lokalinks-collapsed-sections', JSON.stringify(collapsedSections));
-    } catch { /* optional */ }
-  }, [collapsedSections]);
+    if (user) {
+      try {
+        window.localStorage.setItem(`lokalinks-collapsed-${user.id}`, JSON.stringify(collapsedSections));
+      } catch { /* optional */ }
+    }
+  }, [collapsedSections, user]);
 
   const matchesCategory = (item) => {
     if (activeCategory === 'Semua bookmark') return true;
@@ -247,7 +263,9 @@ export default function Home() {
     if (window.confirm(`Hapus bookmark "${item.title}"?`)) {
       setBookmarks((items) => items.filter((current) => current.id !== item.id));
       setOrderMap((current) => Object.fromEntries(Object.entries(current).map(([key, ids]) => [key, ids.filter((id) => id !== item.id)])));
-      await deleteBookmarkFromSupabase(item.id);
+      if (user) {
+        await deleteBookmarkFromSupabase(item.id, user.id);
+      }
     }
   }
 
@@ -270,8 +288,8 @@ export default function Home() {
     }
     setModal(null);
     setEditingId(null);
-    if (savedItem) {
-      await saveBookmarkToSupabase(savedItem);
+    if (savedItem && user) {
+      await saveBookmarkToSupabase(savedItem, user.id);
     }
   }
 
@@ -284,8 +302,8 @@ export default function Home() {
       }
       return item;
     }));
-    if (updatedItem) {
-      await saveBookmarkToSupabase(updatedItem);
+    if (updatedItem && user) {
+      await saveBookmarkToSupabase(updatedItem, user.id);
     }
   }
 
