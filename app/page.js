@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { bookmarks as initialBookmarks } from '../lib/data';
+import { fetchBookmarksFromSupabase, saveBookmarkToSupabase, deleteBookmarkFromSupabase } from '../lib/sync';
 
 const icons = {
   search: <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>,
@@ -94,15 +95,26 @@ export default function Home() {
   const categoryOptions = [...new Set([...folderNames, ...bookmarks.map((item) => item.category)])].sort((a, b) => a.localeCompare(b));
 
   useEffect(() => {
-    try {
-      const savedBookmarks = window.localStorage.getItem('my-links-bookmarks');
-      const savedOrder = window.localStorage.getItem('my-links-order');
-      const savedCollapsed = window.localStorage.getItem('my-links-collapsed-sections');
-      if (savedBookmarks) setBookmarks(JSON.parse(savedBookmarks));
-      if (savedOrder) setOrderMap(JSON.parse(savedOrder));
-      if (savedCollapsed) setCollapsedSections(JSON.parse(savedCollapsed));
-    } catch { /* optional */ }
-    setBookmarksLoaded(true);
+    async function loadData() {
+      try {
+        const remoteData = await fetchBookmarksFromSupabase();
+        if (remoteData && remoteData.length > 0) {
+          setBookmarks(remoteData);
+        } else {
+          const savedBookmarks = window.localStorage.getItem('my-links-bookmarks');
+          if (savedBookmarks) setBookmarks(JSON.parse(savedBookmarks));
+        }
+        const savedOrder = window.localStorage.getItem('my-links-order');
+        const savedCollapsed = window.localStorage.getItem('my-links-collapsed-sections');
+        if (savedOrder) setOrderMap(JSON.parse(savedOrder));
+        if (savedCollapsed) setCollapsedSections(JSON.parse(savedCollapsed));
+      } catch {
+        const savedBookmarks = window.localStorage.getItem('my-links-bookmarks');
+        if (savedBookmarks) setBookmarks(JSON.parse(savedBookmarks));
+      }
+      setBookmarksLoaded(true);
+    }
+    loadData();
   }, []);
 
   useEffect(() => {
@@ -218,27 +230,51 @@ export default function Home() {
     setModal('bookmark');
   }
 
-  function deleteBookmark(item) {
+  async function deleteBookmark(item) {
     if (window.confirm(`Hapus bookmark "${item.title}"?`)) {
       setBookmarks((items) => items.filter((current) => current.id !== item.id));
       setOrderMap((current) => Object.fromEntries(Object.entries(current).map(([key, ids]) => [key, ids.filter((id) => id !== item.id)])));
+      await deleteBookmarkFromSupabase(item.id);
     }
   }
 
-  function saveBookmark(event) {
+  async function saveBookmark(event) {
     event.preventDefault();
     if (!form.title.trim() || !form.url.trim()) return;
     const url = normalizeUrl(form.url);
+    let savedItem;
     if (editingId) {
-      setBookmarks((items) => items.map((item) => item.id === editingId ? { ...item, ...form, url, icon: form.title.trim().charAt(0).toUpperCase() } : item));
+      setBookmarks((items) => items.map((item) => {
+        if (item.id === editingId) {
+          savedItem = { ...item, ...form, url, icon: form.title.trim().charAt(0).toUpperCase() };
+          return savedItem;
+        }
+        return item;
+      }));
     } else {
-      setBookmarks((items) => [{ id: Date.now(), ...form, url, icon: form.title.trim().charAt(0).toUpperCase(), favorite: false }, ...items]);
+      savedItem = { id: Date.now(), ...form, url, icon: form.title.trim().charAt(0).toUpperCase(), favorite: false };
+      setBookmarks((items) => [savedItem, ...items]);
     }
     setModal(null);
     setEditingId(null);
+    if (savedItem) {
+      await saveBookmarkToSupabase(savedItem);
+    }
   }
 
-  const toggleFavorite = (id) => setBookmarks((items) => items.map((item) => item.id === id ? { ...item, favorite: !item.favorite } : item));
+  async function toggleFavorite(id) {
+    let updatedItem;
+    setBookmarks((items) => items.map((item) => {
+      if (item.id === id) {
+        updatedItem = { ...item, favorite: !item.favorite };
+        return updatedItem;
+      }
+      return item;
+    }));
+    if (updatedItem) {
+      await saveBookmarkToSupabase(updatedItem);
+    }
+  }
 
   const scrollCategories = (direction) => {
     if (categoryScrollRef.current) {
