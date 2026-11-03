@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { bookmarks as initialBookmarks } from '../lib/data';
 import { fetchBookmarksFromSupabase, saveBookmarkToSupabase, deleteBookmarkFromSupabase } from '../lib/sync';
+import { supabase, signInWithGoogle, signOut } from '../lib/supabase';
 
 const icons = {
   search: <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>,
@@ -19,6 +20,8 @@ const icons = {
   arrowLeft: <svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>,
   arrowRight: <svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>,
   close: <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>,
+  google: <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.13 0-5.78-2.11-6.73-4.96H1.18v3.15C3.17 21.33 7.23 24 12 24z"/><path fill="#FBBC05" d="M5.27 14.24c-.25-.72-.38-1.49-.38-2.24s.13-1.52.38-2.24V6.61H1.18C.43 8.13 0 9.84 0 11.6s.43 3.47 1.18 4.99l4.09-2.35z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.23 0 3.17 2.67 1.18 6.61l4.09 3.15c.95-2.85 3.6-4.96 6.73-4.96z"/></svg>,
+  logout: <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
 };
 
 const normalizeUrl = (value) => {
@@ -57,6 +60,8 @@ function customSort(items, orderMap, mode) {
 }
 
 export default function Home() {
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState('Semua bookmark');
   const [query, setQuery] = useState('');
   const [dark, setDark] = useState(true);
@@ -95,45 +100,53 @@ export default function Home() {
   const categoryOptions = [...new Set([...folderNames, ...bookmarks.map((item) => item.category)])].sort((a, b) => a.localeCompare(b));
 
   useEffect(() => {
-    async function loadData() {
+    async function initAuthAndData() {
       try {
+        const { data: { session } } = await supabase.auth.getSession();
+        setUser(session?.user || null);
+
+        supabase.auth.onAuthStateChange((_event, session) => {
+          setUser(session?.user || null);
+        });
+
         const remoteData = await fetchBookmarksFromSupabase();
         if (remoteData && remoteData.length > 0) {
           setBookmarks(remoteData);
         } else {
-          const savedBookmarks = window.localStorage.getItem('my-links-bookmarks');
+          const savedBookmarks = window.localStorage.getItem('lokalinks-bookmarks');
           if (savedBookmarks) setBookmarks(JSON.parse(savedBookmarks));
         }
-        const savedOrder = window.localStorage.getItem('my-links-order');
-        const savedCollapsed = window.localStorage.getItem('my-links-collapsed-sections');
+        const savedOrder = window.localStorage.getItem('lokalinks-order');
+        const savedCollapsed = window.localStorage.getItem('lokalinks-collapsed-sections');
         if (savedOrder) setOrderMap(JSON.parse(savedOrder));
         if (savedCollapsed) setCollapsedSections(JSON.parse(savedCollapsed));
       } catch {
-        const savedBookmarks = window.localStorage.getItem('my-links-bookmarks');
+        const savedBookmarks = window.localStorage.getItem('lokalinks-bookmarks');
         if (savedBookmarks) setBookmarks(JSON.parse(savedBookmarks));
       }
+      setAuthLoading(false);
       setBookmarksLoaded(true);
     }
-    loadData();
+    initAuthAndData();
   }, []);
 
   useEffect(() => {
     if (bookmarksLoaded) {
       try {
-        window.localStorage.setItem('my-links-bookmarks', JSON.stringify(bookmarks));
+        window.localStorage.setItem('lokalinks-bookmarks', JSON.stringify(bookmarks));
       } catch { /* optional */ }
     }
   }, [bookmarks, bookmarksLoaded]);
 
   useEffect(() => {
     try {
-      window.localStorage.setItem('my-links-order', JSON.stringify(orderMap));
+      window.localStorage.setItem('lokalinks-order', JSON.stringify(orderMap));
     } catch { /* optional */ }
   }, [orderMap]);
 
   useEffect(() => {
     try {
-      window.localStorage.setItem('my-links-collapsed-sections', JSON.stringify(collapsedSections));
+      window.localStorage.setItem('lokalinks-collapsed-sections', JSON.stringify(collapsedSections));
     } catch { /* optional */ }
   }, [collapsedSections]);
 
@@ -290,6 +303,34 @@ export default function Home() {
     }
   };
 
+  if (authLoading) {
+    return (
+      <main className={dark ? 'app dark' : 'app'}>
+        <div className="auth-loading-screen">Memuat Lokalinks...</div>
+      </main>
+    );
+  }
+
+  if (!user) {
+    return (
+      <main className={dark ? 'app dark' : 'app'}>
+        <div className="auth-container">
+          <div className="auth-card">
+            <div className="brand-text-only large">LOKALINKS</div>
+            <p className="auth-subtitle">Katalog bookmark pribadi elegan & minimalis milik Adam Marchelino</p>
+            <button className="google-login-btn" onClick={signInWithGoogle}>
+              <span className="google-icon">{icons.google}</span>
+              <span>Masuk dengan Google</span>
+            </button>
+            <button className="theme-toggle-auth" onClick={() => setDark(!dark)}>
+              {dark ? icons.sun : icons.moon} {dark ? 'Mode Terang' : 'Mode Gelap'}
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className={dark ? 'app dark' : 'app'}>
       {/* Main Page Layout (Centered Canvas) */}
@@ -298,11 +339,17 @@ export default function Home() {
         <header className="topbar">
           <div className="topbar-left">
             <div className="brand-text-only large">
-              MY LINKS
+              LOKALINKS
             </div>
           </div>
 
           <div className="topbar-right">
+            <div className="user-profile-pill" title={user.email}>
+              {user.user_metadata?.avatar_url ? (
+                <img src={user.user_metadata.avatar_url} alt="" className="user-avatar" />
+              ) : null}
+              <span className="user-name">{user.user_metadata?.full_name || user.email}</span>
+            </div>
             <button
               className="icon-button"
               onClick={() => setDark(!dark)}
@@ -310,6 +357,14 @@ export default function Home() {
               title={dark ? 'Ganti ke mode terang' : 'Ganti ke mode gelap'}
             >
               {dark ? icons.sun : icons.moon}
+            </button>
+            <button
+              className="icon-button logout"
+              onClick={signOut}
+              aria-label="Keluar"
+              title="Keluar dari akun"
+            >
+              {icons.logout}
             </button>
           </div>
         </header>
