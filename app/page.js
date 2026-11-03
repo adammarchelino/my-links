@@ -88,9 +88,14 @@ export default function Home() {
     const tree = {};
     bookmarks.forEach((item) => {
       const { parent, child } = splitCategory(item.category);
-      if (!tree[parent]) tree[parent] = { count: 0, children: {} };
-      tree[parent].count += 1;
-      if (child) tree[parent].children[child] = (tree[parent].children[child] || 0) + 1;
+      const targetParent = parent || 'Tanpa folder';
+      if (!tree[targetParent]) tree[targetParent] = { count: 0, children: {}, items: [] };
+      tree[targetParent].count += 1;
+      tree[targetParent].items.push(item);
+      if (child) {
+        if (!tree[targetParent].children[child]) tree[targetParent].children[child] = [];
+        tree[targetParent].children[child].push(item);
+      }
     });
     return tree;
   }, [bookmarks]);
@@ -124,7 +129,6 @@ export default function Home() {
             if (savedBookmarks) {
               setBookmarks(JSON.parse(savedBookmarks));
             } else {
-              // First time user login fallback to initialBookmarks tagged with their user_id
               setBookmarks(initialBookmarks);
             }
           }
@@ -179,8 +183,18 @@ export default function Home() {
   }), [activeCategory, bookmarks, folderNames, query]);
 
   const sections = useMemo(() => {
-    if (activeCategory === 'Semua bookmark' || activeCategory === 'Favorit') {
-      return [{ key: activeCategory, title: null, items: customSort(visible, orderMap, sortMode) }];
+    if (activeCategory === 'Semua bookmark') {
+      // For 'Semua bookmark', return folder groups as accordion sections
+      return Object.entries(folderTree).map(([folderName, data]) => ({
+        key: `folder-${folderName}`,
+        title: folderName,
+        count: data.count,
+        items: customSort(data.items, orderMap, sortMode),
+        subgroups: data.children
+      }));
+    }
+    if (activeCategory === 'Favorit') {
+      return [{ key: 'Favorit', title: 'Favorit', count: visible.length, items: customSort(visible, orderMap, sortMode) }];
     }
     const grouped = {};
     visible.forEach((item) => {
@@ -192,9 +206,10 @@ export default function Home() {
     return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([title, items]) => ({
       key: `${activeCategory}-${title}`,
       title: title === '__flat__' ? null : title,
+      count: items.length,
       items: customSort(items, orderMap, sortMode)
     }));
-  }, [activeCategory, orderMap, sortMode, visible]);
+  }, [activeCategory, folderTree, orderMap, sortMode, visible]);
 
   const counts = (name) => {
     if (name === 'Semua bookmark') return bookmarks.length;
@@ -463,23 +478,21 @@ export default function Home() {
         {/* Section 3: Bookmark Cards Grid ("CARD") with Notion-style Section Collapse Dropdown */}
         <section className={arrangeMode ? 'cards-section arranging' : 'cards-section'}>
           {sections.map((section) => {
-            const isCollapsed = !!collapsedSections[section.key];
+            const isCollapsed = collapsedSections[section.key] !== false; // Default closed (true) for "Semua bookmark" unless explicitly opened
             const hasManyItems = section.items.length > 10 && !arrangeMode;
             const targetCategoryForAdd = activeCategory === 'Semua bookmark' || activeCategory === 'Favorit' ? (folderNames[0] || 'Lainnya') : (section.title ? `${activeCategory} / ${section.title}` : activeCategory);
 
             return (
               <div className="section-block" key={section.key}>
-                {section.title && (
-                  <div className="section-header-title clickable" onClick={() => toggleSectionCollapse(section.key)}>
-                    <div className="section-title-left">
-                      <span className={isCollapsed ? 'section-chevron collapsed' : 'section-chevron'}>
-                        {icons.chevron}
-                      </span>
-                      <h2>{section.title}</h2>
-                      <span className="badge">{section.items.length}</span>
-                    </div>
+                <div className="section-header-title clickable" onClick={() => toggleSectionCollapse(section.key)}>
+                  <div className="section-title-left">
+                    <span className={isCollapsed ? 'section-chevron collapsed' : 'section-chevron'}>
+                      {icons.chevron}
+                    </span>
+                    <h2>{section.title}</h2>
+                    <span className="badge">{section.count || section.items.length}</span>
                   </div>
-                )}
+                </div>
 
                 {!isCollapsed && (
                   <div className="grid-wrapper">
@@ -573,7 +586,7 @@ export default function Home() {
                       ))}
 
                       {/* Add Card as last item in each section grid */}
-                      {!arrangeMode && (
+                      {!arrangeMode && activeCategory !== 'Semua bookmark' && activeCategory !== 'Favorit' && (
                         <article className="bookmark-card compact add-card-item" onClick={() => openAdd(targetCategoryForAdd)} title="Tambah bookmark baru">
                           <div className="add-card-content">
                             <div className="add-card-icon">+</div>

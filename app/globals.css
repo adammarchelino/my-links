@@ -1073,3 +1073,33 @@ span.fallback-letter {
 .icon-button.logout:hover {
   background: rgba(229, 62, 62, 0.1);
 }
+
+/* Responsive Layout Adjustments & Polish */
+@media (max-width: 768px) {
+  .layout-canvas {
+    padding: 0 12px 40px;
+  }
+  .topbar {
+    padding: 16px 12px;
+  }
+  .search-bar-hero {
+    padding: 0 16px;
+  }
+  .cards-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+  }
+  .modal {
+    padding: 20px;
+    max-width: 92vw;
+  }
+}
+
+@media (max-width: 480px) {
+  .cards-grid {
+    grid-template-columns: 1fr;
+  }
+  .user-name {
+    display: none;
+  }
+}
