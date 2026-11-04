@@ -979,26 +979,8 @@ span.fallback-letter {
   color: var(--muted);
   background: var(--bg);
 }
-.auth-container {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: var(--bg);
-}
-.auth-card {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  padding: 40px;
-  border-radius: 16px;
-  width: 100%;
-  max-width: 420px;
-  text-align: center;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.2);
-  display: grid;
-  gap: 20px;
-  place-items: center;
-}
+
+
 .auth-subtitle {
   font-size: 13px;
   color: var(--muted);
@@ -1035,18 +1017,7 @@ span.fallback-letter {
   width: 18px;
   height: 18px;
 }
-.theme-toggle-auth {
-  background: transparent;
-  border: 0;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px;
-}
+
 .theme-toggle-auth:hover {
   color: var(--ink);
 }
@@ -1101,5 +1072,389 @@ span.fallback-letter {
   }
   .user-name {
     display: none;
+  }
+}
+
+
+/* ===== LAYOUT FIXES ===== */
+
+/* 1. LOGIN PAGE - Center card horizontally and vertically */
+.auth-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+}
+
+.auth-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 48px 40px;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  align-items: center;
+}
+
+/* 2. LOGIN PAGE - Fix "Mode Terang" toggle button */
+.theme-toggle-auth {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.theme-toggle-auth:hover {
+  color: var(--ink);
+  background: var(--soft);
+}
+.theme-toggle-auth svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* 3. HEADER - Fix border radius for buttons and pills (8-12px) */
+.icon-button {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--ink);
+  transition: all 0.15s;
+}
+.icon-button:hover {
+  background: var(--soft);
+  border-color: var(--muted);
+}
+.icon-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.user-profile-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--soft);
+  padding: 6px 14px 6px 6px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  transition: all 0.15s;
+}
+.user-profile-pill:hover {
+  background: var(--surface);
+  border-color: var(--muted);
+}
+
+.user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.user-name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 4. CATEGORY TABS - Fix badge padding and spacing */
+.cat-badge {
+  background: var(--soft);
+  color: var(--muted);
+  padding: 2px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 24px;
+  text-align: center;
+}
+
+.cat-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.cat-item:hover {
+  background: var(--soft);
+  color: var(--ink);
+  border-color: var(--line);
+}
+.cat-item.active {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--line);
+}
+.cat-item.active .cat-badge {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+/* 5. "SEMUA BOOKMARK" - Fix folder spacing and full-width dividers */
+.section-block {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.section-header-title {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-bottom: 12px;
+}
+.section-header-title:hover {
+  background: var(--soft);
+  border-color: var(--muted);
+}
+
+.section-header-title.clickable:hover h2 {
+  color: var(--ink);
+}
+
+.section-title-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.section-chevron {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  transition: transform 0.2s;
+  color: var(--muted);
+}
+.section-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+.section-chevron svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+}
+
+.section-header-title h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--ink);
+}
+
+.badge {
+  background: var(--soft);
+  color: var(--muted);
+  padding: 3px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 24px;
+  text-align: center;
+}
+
+/* Search bar - Fix border radius */
+.search-bar-hero {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+  height: 52px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  transition: all 0.15s;
+}
+.search-bar-hero:focus-within {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--soft);
+}
+
+/* Modal - Fix border radius */
+.modal {
+  background: var(--surface);
+  padding: 32px;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+
+/* Buttons - Consistent border radius */
+.arrange-button, .done-button, .save-button, .cancel-button {
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  transition: all 0.15s;
+}
+
+.save-button, .done-button {
+  background: var(--button-bg);
+  color: var(--button-ink);
+  border-color: var(--button-bg);
+}
+.save-button:hover, .done-button:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.cancel-button, .arrange-button {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--line);
+}
+.cancel-button:hover, .arrange-button:hover {
+  background: var(--soft);
+  border-color: var(--muted);
+}
+
+/* Google login button */
+.google-login-btn {
+  width: 100%;
+  background: #ffffff;
+  color: #1f1f1f;
+  border: 1px solid #dadce0;
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.google-login-btn:hover {
+  background: #f8f9fa;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  transform: translateY(-1px);
+}
+
+.google-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.google-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Cards - Fix border radius */
+.bookmark-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  transition: all 0.15s;
+}
+.bookmark-card:hover {
+  border-color: var(--muted);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  transform: translateY(-2px);
+}
+
+/* Input fields - Fix border radius */
+input, textarea, select {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: var(--ink);
+  transition: all 0.15s;
+}
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--soft);
+}
+
+/* Responsive fixes */
+@media (max-width: 768px) {
+  .auth-card {
+    padding: 32px 24px;
+  }
+  
+  .user-name {
+    max-width: 120px;
+  }
+  
+  .section-header-title {
+    padding: 12px 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  .user-name {
+    display: none;
+  }
+  
+  .cat-item {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  
+  .icon-button {
+    width: 36px;
+    height: 36px;
   }
 }
