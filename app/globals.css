@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
 :root {
   --bg: #f7f7f6;
   --surface: #fff;
@@ -1080,6 +1078,9 @@ span.fallback-letter {
 
 /* 1. LOGIN PAGE - Center card horizontally and vertically */
 .auth-container {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -1093,8 +1094,7 @@ span.fallback-letter {
   border: 1px solid var(--line);
   padding: 48px 40px;
   border-radius: 16px;
-  width: 100%;
-  max-width: 420px;
+  width: min(100%, 420px);
   text-align: center;
   box-shadow: 0 8px 24px rgba(0,0,0,0.08);
   display: flex;
@@ -1127,6 +1127,11 @@ span.fallback-letter {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* 3. HEADER - Fix border radius for buttons and pills (8-12px) */
@@ -1167,6 +1172,8 @@ span.fallback-letter {
   color: var(--ink);
   border: 1px solid var(--line);
   transition: all 0.15s;
+  cursor: pointer;
+  font: inherit;
 }
 .user-profile-pill:hover {
   background: var(--surface);
@@ -1253,6 +1260,10 @@ span.fallback-letter {
   border-color: var(--muted);
 }
 
+.section-header-title.clickable:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
 .section-header-title.clickable:hover h2 {
   color: var(--ink);
 }
@@ -1399,6 +1410,18 @@ span.fallback-letter {
   height: 18px;
 }
 
+.form-error {
+  margin: 0;
+  color: #dc2626;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.modal-actions button:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+
 /* Cards - Fix border radius */
 .bookmark-card {
   background: var(--surface);
@@ -1434,7 +1457,16 @@ input:focus, textarea:focus, select:focus {
     padding: 32px 24px;
   }
   
-  .user-name {
+.user-avatar-fallback {
+  display: grid;
+  place-items: center;
+  background: var(--ink);
+  color: var(--button-ink);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.user-name {
     max-width: 120px;
   }
   
@@ -1444,6 +1476,15 @@ input:focus, textarea:focus, select:focus {
 }
 
 @media (max-width: 480px) {
+  .auth-container {
+    padding: 20px;
+  }
+
+  .auth-card {
+    padding: 28px 20px;
+    gap: 20px;
+  }
+
   .user-name {
     display: none;
   }

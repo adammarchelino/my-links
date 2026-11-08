@@ -75,6 +75,10 @@ export default function Home() {
   const [collapsedSections, setCollapsedSections] = useState({});
   const [form, setForm] = useState({ title: '', url: '', description: '', category: 'Tools' });
   const [editingId, setEditingId] = useState(null);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const [profileError, setProfileError] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
 
   // Mouse drag to scroll state
   const [isDraggingScroll, setIsDraggingScroll] = useState(false);
@@ -83,6 +87,7 @@ export default function Home() {
 
   const categoryScrollRef = useRef(null);
   const gridScrollRefs = useRef({});
+  const authUserIdRef = useRef(null);
 
   const folderTree = useMemo(() => {
     const tree = {};
@@ -105,46 +110,74 @@ export default function Home() {
   const categoryOptions = [...new Set([...folderNames, ...bookmarks.map((item) => item.category)])].sort((a, b) => a.localeCompare(b));
 
   useEffect(() => {
+    let authSubscription;
     async function initAuthAndData() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const currentUser = session?.user || null;
+        authUserIdRef.current = currentUser?.id || null;
         setUser(currentUser);
 
-        supabase.auth.onAuthStateChange(async (_event, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
           const newUser = session?.user || null;
+          if (authUserIdRef.current !== newUser?.id) {
+            authUserIdRef.current = newUser?.id || null;
+            setBookmarks([]);
+            setOrderMap({});
+            setCollapsedSections({});
+            setBookmarksLoaded(false);
+          }
           setUser(newUser);
         });
-
-        if (currentUser) {
-          const remoteData = await fetchBookmarksFromSupabase(currentUser.id);
-          const cacheKey = `lokalinks-bookmarks-${currentUser.id}`;
-          const orderKey = `lokalinks-order-${currentUser.id}`;
-          const collapseKey = `lokalinks-collapsed-${currentUser.id}`;
-
-          if (remoteData && remoteData.length > 0) {
-            setBookmarks(remoteData);
-          } else {
-            const savedBookmarks = window.localStorage.getItem(cacheKey);
-            if (savedBookmarks) {
-              setBookmarks(JSON.parse(savedBookmarks));
-            } else {
-              setBookmarks(initialBookmarks);
-            }
-          }
-          const savedOrder = window.localStorage.getItem(orderKey);
-          const savedCollapsed = window.localStorage.getItem(collapseKey);
-          if (savedOrder) setOrderMap(JSON.parse(savedOrder));
-          if (savedCollapsed) setCollapsedSections(JSON.parse(savedCollapsed));
-        }
+        authSubscription = subscription;
       } catch (err) {
         console.error('Auth/Data init error:', err);
       }
       setAuthLoading(false);
-      setBookmarksLoaded(true);
     }
     initAuthAndData();
+    return () => {
+      authSubscription?.unsubscribe();
+    };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadUserData() {
+      if (!user) {
+        setBookmarksLoaded(true);
+        return;
+      }
+
+      setBookmarksLoaded(false);
+      try {
+        const remoteData = await fetchBookmarksFromSupabase(user.id);
+        const cacheKey = `lokalinks-bookmarks-${user.id}`;
+        const savedBookmarks = window.localStorage.getItem(cacheKey);
+        let nextBookmarks = initialBookmarks;
+        if (remoteData?.length) nextBookmarks = remoteData;
+        else if (savedBookmarks) nextBookmarks = JSON.parse(savedBookmarks);
+        const savedOrder = window.localStorage.getItem(`lokalinks-order-${user.id}`);
+        const savedCollapsed = window.localStorage.getItem(`lokalinks-collapsed-${user.id}`);
+
+        if (!cancelled) {
+          setBookmarks(nextBookmarks);
+          setOrderMap(savedOrder ? JSON.parse(savedOrder) : {});
+          setCollapsedSections(savedCollapsed ? JSON.parse(savedCollapsed) : {});
+          setBookmarksLoaded(true);
+        }
+      } catch (err) {
+        console.error('Bookmark loading error:', err);
+        if (!cancelled) setBookmarksLoaded(true);
+      }
+    }
+    loadUserData();
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
+  useEffect(() => {
+    setProfileName(user?.user_metadata?.display_name || user?.user_metadata?.full_name || '');
+  }, [user?.id, user?.user_metadata?.display_name, user?.user_metadata?.full_name]);
 
   useEffect(() => {
     if (bookmarksLoaded && user) {
@@ -173,6 +206,7 @@ export default function Home() {
   const matchesCategory = (item) => {
     if (activeCategory === 'Semua bookmark') return true;
     if (activeCategory === 'Favorit') return item.favorite;
+    if (activeCategory === 'Tanpa folder') return !item.category?.trim();
     if (folderNames.includes(activeCategory)) return parentOf(item) === activeCategory;
     return item.category === activeCategory;
   };
@@ -184,14 +218,17 @@ export default function Home() {
 
   const sections = useMemo(() => {
     if (activeCategory === 'Semua bookmark') {
-      // For 'Semua bookmark', return folder groups as accordion sections
-      return Object.entries(folderTree).map(([folderName, data]) => ({
+      const visibleIds = new Set(visible.map((item) => item.id));
+      return Object.entries(folderTree).map(([folderName, data]) => {
+        const items = data.items.filter((item) => visibleIds.has(item.id));
+        return {
         key: `folder-${folderName}`,
         title: folderName,
-        count: data.count,
-        items: customSort(data.items, orderMap, sortMode),
+        count: items.length,
+        items: customSort(items, orderMap, sortMode),
         subgroups: data.children
-      }));
+        };
+      }).filter((section) => section.items.length > 0);
     }
     if (activeCategory === 'Favorit') {
       return [{ key: 'Favorit', title: 'Favorit', count: visible.length, items: customSort(visible, orderMap, sortMode) }];
@@ -272,6 +309,34 @@ export default function Home() {
     setEditingId(item.id);
     setForm({ title: item.title, url: item.url, description: item.description || '', category: item.category });
     setModal('bookmark');
+  }
+
+  function openProfile() {
+    setProfileName(user?.user_metadata?.display_name || user?.user_metadata?.full_name || '');
+    setProfileError('');
+    setProfileModalOpen(true);
+  }
+
+  async function saveProfile(event) {
+    event.preventDefault();
+    const displayName = profileName.trim();
+    if (!displayName || displayName.length > 50) {
+      setProfileError('Nama wajib diisi dan maksimal 50 karakter.');
+      return;
+    }
+
+    setProfileSaving(true);
+    setProfileError('');
+    try {
+      const { data, error } = await supabase.auth.updateUser({ data: { display_name: displayName } });
+      if (error) throw error;
+      if (data.user) setUser(data.user);
+      setProfileModalOpen(false);
+    } catch {
+      setProfileError('Nama belum tersimpan. Silakan coba lagi.');
+    } finally {
+      setProfileSaving(false);
+    }
   }
 
   async function deleteBookmark(item) {
@@ -377,12 +442,12 @@ export default function Home() {
           </div>
 
           <div className="topbar-right">
-            <div className="user-profile-pill" title={user.email}>
+            <button className="user-profile-pill" title={user.email} onClick={openProfile} aria-label="Edit profil">
               {user.user_metadata?.avatar_url ? (
                 <img src={user.user_metadata.avatar_url} alt="" className="user-avatar" />
-              ) : null}
-              <span className="user-name">{user.user_metadata?.full_name || user.email}</span>
-            </div>
+              ) : <span className="user-avatar user-avatar-fallback" aria-hidden="true">{(user.user_metadata?.display_name || user.user_metadata?.full_name || user.email || '?').charAt(0).toUpperCase()}</span>}
+              <span className="user-name">{user.user_metadata?.display_name || user.user_metadata?.full_name || user.email}</span>
+            </button>
             <button
               className="icon-button"
               onClick={() => setDark(!dark)}
@@ -484,7 +549,20 @@ export default function Home() {
 
             return (
               <div className="section-block" key={section.key}>
-                <div className="section-header-title clickable" onClick={() => toggleSectionCollapse(section.key)}>
+                <div
+                  className="section-header-title clickable"
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={!isCollapsed}
+                  aria-controls={`${section.key.replace(/[^a-z0-9_-]/gi, '-')}-content`}
+                  onClick={() => toggleSectionCollapse(section.key)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      toggleSectionCollapse(section.key);
+                    }
+                  }}
+                >
                   <div className="section-title-left">
                     <span className={isCollapsed ? 'section-chevron collapsed' : 'section-chevron'}>
                       {icons.chevron}
@@ -495,7 +573,7 @@ export default function Home() {
                 </div>
 
                 {!isCollapsed && (
-                  <div className="grid-wrapper">
+                  <div className="grid-wrapper" id={`${section.key.replace(/[^a-z0-9_-]/gi, '-')}-content`}>
                     {hasManyItems && (
                       <button className="grid-scroll-arrow left" onClick={() => scrollGrid(section.key, -1)} aria-label="Geser kiri">
                         {icons.arrowLeft}
@@ -703,6 +781,45 @@ export default function Home() {
               <button className="save-button">
                 {editingId ? 'Simpan perubahan' : 'Simpan bookmark'}
               </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {profileModalOpen && (
+        <div className="modal-backdrop" onMouseDown={() => setProfileModalOpen(false)}>
+          <form
+            className="modal profile-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="profile-modal-title"
+            onSubmit={saveProfile}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">Akun Google</p>
+                <h2 id="profile-modal-title">Edit nama profil</h2>
+              </div>
+              <button type="button" className="close-button" onClick={() => setProfileModalOpen(false)} aria-label="Tutup modal">×</button>
+            </div>
+            <div className="modal-form">
+              <label>
+                Nama tampilan
+                <input
+                  autoFocus
+                  required
+                  maxLength={50}
+                  value={profileName}
+                  onChange={(event) => setProfileName(event.target.value)}
+                  placeholder="Nama Anda"
+                />
+              </label>
+              {profileError && <p className="form-error" role="alert">{profileError}</p>}
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="cancel-button" onClick={() => setProfileModalOpen(false)}>Batal</button>
+              <button className="save-button" disabled={profileSaving}>{profileSaving ? 'Menyimpan…' : 'Simpan nama'}</button>
             </div>
           </form>
         </div>
