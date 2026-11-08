@@ -83,8 +83,6 @@ export default function Home() {
   const [profileName, setProfileName] = useState('');
   const [profileError, setProfileError] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
-  const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
-  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
   const [categoryDraft, setCategoryDraft] = useState('');
   const [categoryFeedback, setCategoryFeedback] = useState('');
@@ -105,8 +103,6 @@ export default function Home() {
 
   const gridScrollRefs = useRef({});
   const authUserIdRef = useRef(null);
-  const categoryMenuRef = useRef(null);
-  const actionsMenuRef = useRef(null);
   const importInputRef = useRef(null);
 
   const folderTree = useMemo(() => {
@@ -127,26 +123,6 @@ export default function Home() {
 
   const folderNames = Object.keys(folderTree);
   const categoryOptions = [...new Set([...folderNames, ...bookmarks.map((item) => item.category).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
-
-  useEffect(() => {
-    if (!categoryMenuOpen && !actionsMenuOpen) return undefined;
-    const handlePointerDown = (event) => {
-      if (!categoryMenuRef.current?.contains(event.target)) setCategoryMenuOpen(false);
-      if (!actionsMenuRef.current?.contains(event.target)) setActionsMenuOpen(false);
-    };
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        setCategoryMenuOpen(false);
-        setActionsMenuOpen(false);
-      }
-    };
-    document.addEventListener('pointerdown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [categoryMenuOpen, actionsMenuOpen]);
 
   useEffect(() => {
     let authSubscription;
@@ -314,7 +290,6 @@ export default function Home() {
   const selectCategory = (name) => {
     setActiveCategory(name);
     setArrangeMode(false);
-    setCategoryMenuOpen(false);
   };
 
   const toggleSectionCollapse = (key) => {
@@ -690,65 +665,26 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Category navigation and collection actions */}
-        <section className="category-section" aria-label="Navigasi dan pengelolaan bookmark">
-          <div className="category-menu-anchor" ref={categoryMenuRef}>
-            <button
-              type="button"
-              className="category-menu-trigger"
-              aria-haspopup="menu"
-              aria-expanded={categoryMenuOpen}
-              onClick={() => setCategoryMenuOpen((open) => !open)}
-            >
-              <span className="category-trigger-copy">
-                <span className="category-trigger-label">KATEGORI</span>
-                <span className="category-trigger-name">{activeCategory}</span>
-              </span>
-              <span className="category-trigger-count">{counts(activeCategory)}</span>
-              <span className={categoryMenuOpen ? 'category-trigger-chevron open' : 'category-trigger-chevron'}>{icons.chevron}</span>
-            </button>
-            {categoryMenuOpen && (
-              <div className="category-menu-list" role="menu" aria-label="Pilih kategori">
-                {['Semua bookmark', 'Favorit', ...categoryOptions].map((name, index) => (
-                  <button
-                    key={`${name}-${index}`}
-                    type="button"
-                    role="menuitem"
-                    className={activeCategory === name ? 'category-menu-item active' : 'category-menu-item'}
-                    style={index > 1 ? { paddingLeft: `${12 + (name.split(' / ').length - 1) * 14}px` } : undefined}
-                    onClick={() => selectCategory(name)}
-                  >
-                    <span>{name}</span>
-                    <span className="category-menu-count">{counts(name)}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="collection-actions-anchor" ref={actionsMenuRef}>
-            <button
-              type="button"
-              className="collection-actions-trigger"
-              aria-haspopup="menu"
-              aria-expanded={actionsMenuOpen}
-              onClick={() => setActionsMenuOpen((open) => !open)}
-            >
-              <span aria-hidden="true">•••</span> Kelola
-            </button>
-            {actionsMenuOpen && (
-              <div className="collection-actions-menu" role="menu" aria-label="Kelola bookmark">
-                <button type="button" role="menuitem" onClick={() => { setCategoryFeedback(''); setEditingCategory(''); setManagerBookmarkId(''); setManagerTargetCategory(''); setManagerSourceCategory(''); setCategoryManagerOpen(true); setActionsMenuOpen(false); }}>
-                  Kelola kategori
-                </button>
-                <button type="button" role="menuitem" onClick={() => { setActionsMenuOpen(false); importInputRef.current?.click(); }}>
-                  Impor bookmark HTML
-                </button>
-                <button type="button" role="menuitem" onClick={exportBookmarks} disabled={!bookmarks.length}>
-                  Ekspor ke Chrome
-                </button>
-              </div>
-            )}
+        {/* Simple, always-visible category navigation */}
+        <section className="category-section" aria-label="Navigasi bookmark">
+          <nav className="category-nav" aria-label="Kategori bookmark">
+            {['Semua bookmark', 'Favorit', ...categoryOptions].map((name, index) => (
+              <button
+                key={`${name}-${index}`}
+                type="button"
+                className={activeCategory === name ? 'category-nav-item active' : 'category-nav-item'}
+                aria-current={activeCategory === name ? 'page' : undefined}
+                onClick={() => selectCategory(name)}
+              >
+                <span>{name}</span>
+                <span className="category-nav-count">{counts(name)}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="category-actions" aria-label="Aksi bookmark">
+            <button type="button" onClick={() => { setCategoryFeedback(''); setEditingCategory(''); setManagerBookmarkId(''); setManagerTargetCategory(''); setManagerSourceCategory(''); setCategoryManagerOpen(true); }}>Kategori</button>
+            <button type="button" onClick={() => importInputRef.current?.click()}>Impor</button>
+            <button type="button" onClick={exportBookmarks} disabled={!bookmarks.length}>Ekspor</button>
           </div>
           <input ref={importInputRef} className="visually-hidden-input" type="file" accept=".html,text/html" onChange={previewImportFile} aria-label="Pilih file HTML bookmark" />
         </section>
