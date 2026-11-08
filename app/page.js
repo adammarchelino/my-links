@@ -67,6 +67,9 @@ export default function Home() {
   const [dark, setDark] = useState(true);
   const [bookmarks, setBookmarks] = useState([]);
   const [bookmarksLoaded, setBookmarksLoaded] = useState(false);
+  const [bookmarkLoadError, setBookmarkLoadError] = useState(false);
+  const [bookmarksDirty, setBookmarksDirty] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [modal, setModal] = useState(null);
   const [arrangeMode, setArrangeMode] = useState(false);
   const [draggedId, setDraggedId] = useState(null);
@@ -126,6 +129,8 @@ export default function Home() {
             setOrderMap({});
             setCollapsedSections({});
             setBookmarksLoaded(false);
+            setBookmarkLoadError(false);
+            setBookmarksDirty(false);
           }
           setUser(newUser);
         });
@@ -150,13 +155,22 @@ export default function Home() {
       }
 
       setBookmarksLoaded(false);
+      setBookmarkLoadError(false);
       try {
-        const remoteData = await fetchBookmarksFromSupabase(user.id);
+        const { data: remoteData, error: remoteError } = await fetchBookmarksFromSupabase(user.id);
         const cacheKey = `lokalinks-bookmarks-${user.id}`;
         const savedBookmarks = window.localStorage.getItem(cacheKey);
-        let nextBookmarks = initialBookmarks;
-        if (remoteData?.length) nextBookmarks = remoteData;
-        else if (savedBookmarks) nextBookmarks = JSON.parse(savedBookmarks);
+        const hasLoadError = Boolean(remoteError);
+        let nextBookmarks;
+        if (hasLoadError) {
+          nextBookmarks = savedBookmarks ? JSON.parse(savedBookmarks) : [];
+        } else if (remoteData?.length) {
+          nextBookmarks = remoteData;
+        } else if (savedBookmarks) {
+          nextBookmarks = JSON.parse(savedBookmarks);
+        } else {
+          nextBookmarks = initialBookmarks;
+        }
         const savedOrder = window.localStorage.getItem(`lokalinks-order-${user.id}`);
         const savedCollapsed = window.localStorage.getItem(`lokalinks-collapsed-${user.id}`);
 
@@ -164,28 +178,33 @@ export default function Home() {
           setBookmarks(nextBookmarks);
           setOrderMap(savedOrder ? JSON.parse(savedOrder) : {});
           setCollapsedSections(savedCollapsed ? JSON.parse(savedCollapsed) : {});
+          setBookmarkLoadError(hasLoadError);
+          setBookmarksDirty(false);
           setBookmarksLoaded(true);
         }
       } catch (err) {
-        console.error('Bookmark loading error:', err);
-        if (!cancelled) setBookmarksLoaded(true);
+        console.error('Bookmark loading error:', { message: err?.message || 'Unknown loading error' });
+        if (!cancelled) {
+          setBookmarkLoadError(true);
+          setBookmarksLoaded(true);
+        }
       }
     }
     loadUserData();
     return () => { cancelled = true; };
-  }, [user?.id]);
+  }, [user?.id, loadAttempt]);
 
   useEffect(() => {
     setProfileName(user?.user_metadata?.display_name || user?.user_metadata?.full_name || '');
   }, [user?.id, user?.user_metadata?.display_name, user?.user_metadata?.full_name]);
 
   useEffect(() => {
-    if (bookmarksLoaded && user) {
+    if (bookmarksLoaded && user && (!bookmarkLoadError || bookmarksDirty)) {
       try {
         window.localStorage.setItem(`lokalinks-bookmarks-${user.id}`, JSON.stringify(bookmarks));
       } catch { /* optional */ }
     }
-  }, [bookmarks, bookmarksLoaded, user]);
+  }, [bookmarks, bookmarksDirty, bookmarksLoaded, bookmarkLoadError, user]);
 
   useEffect(() => {
     if (user) {
@@ -342,6 +361,7 @@ export default function Home() {
   async function deleteBookmark(item) {
     if (window.confirm(`Hapus bookmark "${item.title}"?`)) {
       setBookmarks((items) => items.filter((current) => current.id !== item.id));
+      setBookmarksDirty(true);
       setOrderMap((current) => Object.fromEntries(Object.entries(current).map(([key, ids]) => [key, ids.filter((id) => id !== item.id)])));
       if (user) {
         await deleteBookmarkFromSupabase(item.id, user.id);
@@ -366,6 +386,7 @@ export default function Home() {
       savedItem = { id: Date.now(), ...form, url, icon: form.title.trim().charAt(0).toUpperCase(), favorite: false };
       setBookmarks((items) => [savedItem, ...items]);
     }
+    setBookmarksDirty(true);
     setModal(null);
     setEditingId(null);
     if (savedItem && user) {
@@ -382,6 +403,7 @@ export default function Home() {
       }
       return item;
     }));
+    setBookmarksDirty(true);
     if (updatedItem && user) {
       await saveBookmarkToSupabase(updatedItem, user.id);
     }
@@ -515,6 +537,9 @@ export default function Home() {
             <span className="active-count">{visible.length} bookmark</span>
           </div>
           <div className="toolbar-actions">
+            <button type="button" className="add-bookmark-button" onClick={() => openAdd(activeCategory)}>
+              <span aria-hidden="true">+</span> Tambah bookmark
+            </button>
             <select
               className="sort-select"
               value={sortMode}
@@ -542,6 +567,16 @@ export default function Home() {
 
         {/* Section 3: Bookmark Cards Grid ("CARD") with Notion-style Section Collapse Dropdown */}
         <section className={arrangeMode ? 'cards-section arranging' : 'cards-section'}>
+          {bookmarkLoadError && (
+            <div className="bookmark-load-error" role="alert">
+              <div>
+                <strong>Bookmark belum berhasil dimuat.</strong>
+                <span>Data yang tersimpan di browser tetap dipertahankan. Periksa koneksi atau kebijakan akses Supabase, lalu coba lagi.</span>
+              </div>
+              <button type="button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Coba lagi</button>
+            </div>
+          )}
+          {!bookmarksLoaded && <div className="bookmark-loading" role="status">Memuat bookmark…</div>}
           {sections.map((section) => {
             const isCollapsed = collapsedSections[section.key] !== false; // Default closed (true) for "Semua bookmark" unless explicitly opened
             const hasManyItems = section.items.length > 10 && !arrangeMode;
@@ -685,7 +720,7 @@ export default function Home() {
             );
           })}
 
-          {visible.length === 0 && (
+          {visible.length === 0 && !bookmarkLoadError && (
             <div className="empty-state">
               <strong>Bookmark tidak ditemukan</strong>
               <span>Tidak ada hasil yang cocok dengan kata kunci atau kategori ini.</span>

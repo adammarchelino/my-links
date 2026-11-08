@@ -820,6 +820,11 @@ span.fallback-letter {
   .modal-form-grid { grid-template-columns: 1fr; }
   .modal-actions { flex-direction: column-reverse; }
   .cancel-button, .save-button { width: 100%; }
+  .content-toolbar { align-items: flex-start; flex-direction: column; gap: 14px; }
+  .toolbar-actions { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .add-bookmark-button { grid-column: 1 / -1; }
+  .sort-select, .arrange-button, .done-button { width: 100%; }
+  .bookmark-load-error { align-items: stretch; flex-direction: column; }
 }
 
 .brand-text-only {
@@ -848,12 +853,6 @@ span.fallback-letter {
 .cat-dropdown-wrapper {
   position: relative;
   flex: 0 0 auto;
-}
-.cat-item {
-  display: flex;
-  align-items: center;
-  padding: 0 !important;
-  overflow: hidden;
 }
 .cat-main-btn {
   border: 0;
@@ -969,6 +968,8 @@ span.fallback-letter {
 
 /* Auth & Google Login Screen */
 .auth-loading-screen {
+  flex: 1;
+  width: 100%;
   min-height: 100vh;
   display: grid;
   place-items: center;
@@ -1199,27 +1200,32 @@ span.fallback-letter {
 .cat-badge {
   background: var(--soft);
   color: var(--muted);
-  padding: 2px 10px;
-  border-radius: 8px;
-  font-size: 12px;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 6px;
+  font-size: 11px;
   font-weight: 600;
-  min-width: 24px;
   text-align: center;
+  line-height: 1;
 }
 
 .cat-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 10px;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
   transition: all 0.15s;
+  line-height: 1.2;
 }
 .cat-item:hover {
   background: var(--soft);
@@ -1227,14 +1233,60 @@ span.fallback-letter {
   border-color: var(--line);
 }
 .cat-item.active {
-  background: var(--surface);
-  color: var(--ink);
-  border-color: var(--line);
+  background: var(--button-bg);
+  color: var(--button-ink);
+  border-color: var(--button-bg);
 }
 .cat-item.active .cat-badge {
-  background: var(--ink);
-  color: var(--surface);
+  background: color-mix(in srgb, var(--button-ink) 14%, transparent);
+  color: var(--button-ink);
 }
+
+.add-bookmark-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 13px;
+  border: 1px solid var(--button-bg);
+  border-radius: 8px;
+  background: var(--button-bg);
+  color: var(--button-ink);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: opacity .15s, transform .15s;
+}
+.add-bookmark-button:hover { opacity: .88; transform: translateY(-1px); }
+.add-bookmark-button span { font-size: 18px; line-height: 12px; }
+
+.bookmark-load-error {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin: 0 0 20px;
+  padding: 14px 16px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+}
+.bookmark-load-error > div { display: grid; gap: 4px; }
+.bookmark-load-error strong { font-size: 13px; }
+.bookmark-load-error span { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.bookmark-load-error button {
+  flex: 0 0 auto;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+.bookmark-loading { width: 100%; padding: 24px 0; color: var(--muted); text-align: center; font-size: 13px; }
 
 /* 5. "SEMUA BOOKMARK" - Fix folder spacing and full-width dividers */
 .section-block {
