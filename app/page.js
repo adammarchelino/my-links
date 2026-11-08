@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { bookmarks as initialBookmarks } from '../lib/data';
-import { fetchBookmarksFromSupabase, saveBookmarkToSupabase, deleteBookmarkFromSupabase } from '../lib/sync';
+import { fetchBookmarksFromSupabase, saveBookmarkToSupabase, saveBookmarksToSupabase, deleteBookmarkFromSupabase } from '../lib/sync';
 import { supabase, signInWithGoogle, signOut } from '../lib/supabase';
+import { createChromeBookmarksHtml, parseChromeBookmarksHtml } from '../lib/bookmark-files';
 
 const icons = {
   search: <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>,
@@ -82,15 +83,31 @@ export default function Home() {
   const [profileName, setProfileName] = useState('');
   const [profileError, setProfileError] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
+  const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
+  const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
+  const [categoryDraft, setCategoryDraft] = useState('');
+  const [categoryFeedback, setCategoryFeedback] = useState('');
+  const [editingCategory, setEditingCategory] = useState('');
+  const [categoryNameDraft, setCategoryNameDraft] = useState('');
+  const [managerBookmarkId, setManagerBookmarkId] = useState('');
+  const [managerTargetCategory, setManagerTargetCategory] = useState('');
+  const [managerSourceCategory, setManagerSourceCategory] = useState('');
+  const [importPreview, setImportPreview] = useState(null);
+  const [importError, setImportError] = useState('');
+  const [importBusy, setImportBusy] = useState(false);
+  const [actionNotice, setActionNotice] = useState('');
 
   // Mouse drag to scroll state
   const [isDraggingScroll, setIsDraggingScroll] = useState(false);
   const [startX, setStartX] = useState(0);
   const [scrollLeftState, setScrollLeftState] = useState(0);
 
-  const categoryScrollRef = useRef(null);
   const gridScrollRefs = useRef({});
   const authUserIdRef = useRef(null);
+  const categoryMenuRef = useRef(null);
+  const actionsMenuRef = useRef(null);
+  const importInputRef = useRef(null);
 
   const folderTree = useMemo(() => {
     const tree = {};
@@ -109,8 +126,27 @@ export default function Home() {
   }, [bookmarks]);
 
   const folderNames = Object.keys(folderTree);
-  const categoryNames = ['Semua bookmark', 'Favorit', ...folderNames];
-  const categoryOptions = [...new Set([...folderNames, ...bookmarks.map((item) => item.category)])].sort((a, b) => a.localeCompare(b));
+  const categoryOptions = [...new Set([...folderNames, ...bookmarks.map((item) => item.category).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
+
+  useEffect(() => {
+    if (!categoryMenuOpen && !actionsMenuOpen) return undefined;
+    const handlePointerDown = (event) => {
+      if (!categoryMenuRef.current?.contains(event.target)) setCategoryMenuOpen(false);
+      if (!actionsMenuRef.current?.contains(event.target)) setActionsMenuOpen(false);
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setCategoryMenuOpen(false);
+        setActionsMenuOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [categoryMenuOpen, actionsMenuOpen]);
 
   useEffect(() => {
     let authSubscription;
@@ -278,13 +314,14 @@ export default function Home() {
   const selectCategory = (name) => {
     setActiveCategory(name);
     setArrangeMode(false);
+    setCategoryMenuOpen(false);
   };
 
   const toggleSectionCollapse = (key) => {
-    setCollapsedSections((current) => ({
-      ...current,
-      [key]: !current[key]
-    }));
+    setCollapsedSections((current) => {
+      const isCollapsed = current[key] !== false;
+      return { ...current, [key]: !isCollapsed };
+    });
   };
 
   const saveOrder = (category, ids) => setOrderMap((current) => ({ ...current, [category]: ids }));
@@ -409,11 +446,156 @@ export default function Home() {
     }
   }
 
-  const scrollCategories = (direction) => {
-    if (categoryScrollRef.current) {
-      categoryScrollRef.current.scrollBy({ left: direction * 240, behavior: 'smooth' });
+  async function persistBookmarkUpdates(updatedItems, successMessage) {
+    if (!updatedItems.length) return false;
+    const saved = await saveBookmarksToSupabase(updatedItems, user?.id);
+    if (!saved) {
+      setCategoryFeedback('Perubahan belum tersimpan. Periksa koneksi, lalu coba lagi.');
+      return false;
     }
-  };
+    const updatesById = new Map(updatedItems.map((item) => [item.id, item]));
+    setBookmarks((current) => current.map((item) => updatesById.get(item.id) || item));
+    setBookmarksDirty(true);
+    setCategoryFeedback(successMessage);
+    return true;
+  }
+
+  const cleanCategoryName = (value) => value.split('/').map((part) => part.trim()).filter(Boolean).join(' / ');
+
+  async function createCategory(event) {
+    event.preventDefault();
+    const name = cleanCategoryName(categoryDraft);
+    const selectedBookmark = bookmarks.find((item) => String(item.id) === String(managerBookmarkId));
+    if (!name || !selectedBookmark) {
+      setCategoryFeedback('Isi nama kategori dan pilih satu bookmark untuk ditempatkan di dalamnya.');
+      return;
+    }
+    if (categoryOptions.includes(name)) {
+      setCategoryFeedback('Kategori tersebut sudah ada. Gunakan bagian pindahkan bookmark untuk menambahkan isinya.');
+      return;
+    }
+    const updatedItem = { ...selectedBookmark, category: name };
+    if (await persistBookmarkUpdates([updatedItem], `Kategori “${name}” dibuat dan bookmark dipindahkan.`)) {
+      setCategoryDraft('');
+      setManagerBookmarkId('');
+      setManagerTargetCategory(name);
+      setActiveCategory(name);
+    }
+  }
+
+  async function renameCategory(event, oldName) {
+    event.preventDefault();
+    const nextName = cleanCategoryName(categoryNameDraft);
+    if (!nextName) {
+      setCategoryFeedback('Nama kategori tidak boleh kosong.');
+      return;
+    }
+    if (nextName === oldName) {
+      setEditingCategory('');
+      return;
+    }
+    const isInsideRenamedTree = (name) => name === oldName || name.startsWith(`${oldName} / `);
+    if (categoryOptions.some((name) => !isInsideRenamedTree(name) && (name === nextName || name.startsWith(`${nextName} / `)))) {
+      setCategoryFeedback('Nama itu sudah digunakan kategori lain.');
+      return;
+    }
+    const updatedItems = bookmarks
+      .filter((item) => isInsideRenamedTree(item.category || ''))
+      .map((item) => ({ ...item, category: `${nextName}${item.category.slice(oldName.length)}` }));
+    if (await persistBookmarkUpdates(updatedItems, `Kategori “${oldName}” diubah menjadi “${nextName}”.`)) {
+      if (isInsideRenamedTree(activeCategory)) setActiveCategory(`${nextName}${activeCategory.slice(oldName.length)}`);
+      setEditingCategory('');
+    }
+  }
+
+  async function moveCategoryItems(sourceCategory, destinationCategory) {
+    if (!destinationCategory || sourceCategory === destinationCategory) {
+      setCategoryFeedback('Pilih kategori tujuan yang berbeda.');
+      return;
+    }
+    const isInsideSource = (name) => name === sourceCategory || name.startsWith(`${sourceCategory} / `);
+    const updatedItems = bookmarks
+      .filter((item) => isInsideSource(item.category || ''))
+      .map((item) => ({ ...item, category: `${destinationCategory}${item.category.slice(sourceCategory.length)}` }));
+    if (await persistBookmarkUpdates(updatedItems, `${updatedItems.length} bookmark dipindahkan ke “${destinationCategory}”.`)) {
+      if (isInsideSource(activeCategory)) setActiveCategory(destinationCategory);
+    }
+  }
+
+  async function moveManagedBookmark(event) {
+    event.preventDefault();
+    const selected = bookmarks.find((item) => String(item.id) === String(managerBookmarkId));
+    if (!selected || !managerTargetCategory) {
+      setCategoryFeedback('Pilih bookmark dan kategori tujuan.');
+      return;
+    }
+    if (selected.category === managerTargetCategory) {
+      setCategoryFeedback('Bookmark sudah berada di kategori tersebut.');
+      return;
+    }
+    if (await persistBookmarkUpdates([{ ...selected, category: managerTargetCategory }], `“${selected.title}” dipindahkan ke “${managerTargetCategory}”.`)) {
+      setManagerBookmarkId('');
+    }
+  }
+
+  async function previewImportFile(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const parsed = parseChromeBookmarksHtml(await file.text());
+      const existingUrls = new Set(bookmarks.map((item) => {
+        try { return new URL(normalizeUrl(item.url)).href.toLowerCase(); } catch { return item.url.toLowerCase(); }
+      }));
+      const uniqueBookmarks = parsed.bookmarks.filter((item) => {
+        const key = item.url.toLowerCase();
+        if (existingUrls.has(key)) return false;
+        existingUrls.add(key);
+        return true;
+      });
+      setImportPreview({ fileName: file.name, bookmarks: uniqueBookmarks, skipped: parsed.skipped + parsed.bookmarks.length - uniqueBookmarks.length });
+      setImportError('');
+      setActionNotice('');
+    } catch (error) {
+      console.error('Bookmark import preview error:', error);
+      setActionNotice('File tidak dapat dibaca. Pilih file HTML hasil ekspor bookmark Chrome.');
+    }
+  }
+
+  async function confirmImport() {
+    if (!importPreview?.bookmarks.length || importBusy) return;
+    setImportBusy(true);
+    setImportError('');
+    const idBase = Date.now();
+    const newBookmarks = importPreview.bookmarks.map((item, index) => ({ ...item, id: idBase + index }));
+    try {
+      const saved = await saveBookmarksToSupabase(newBookmarks, user?.id);
+      if (!saved) {
+        setImportError('Bookmark impor belum tersimpan. Periksa koneksi dan kebijakan Supabase, lalu coba lagi.');
+        return;
+      }
+      setBookmarks((current) => [...newBookmarks, ...current]);
+      setBookmarksDirty(true);
+      setImportPreview(null);
+      setActionNotice(`${newBookmarks.length} bookmark berhasil diimpor${importPreview.skipped ? `, ${importPreview.skipped} duplikat atau tautan tidak didukung dilewati` : ''}.`);
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
+  function exportBookmarks() {
+    const file = new Blob([createChromeBookmarksHtml(bookmarks)], { type: 'text/html;charset=utf-8' });
+    const downloadUrl = URL.createObjectURL(file);
+    const anchor = document.createElement('a');
+    anchor.href = downloadUrl;
+    anchor.download = 'lokalinks-bookmarks.html';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+    setActionsMenuOpen(false);
+    setActionNotice(`${bookmarks.length} bookmark diekspor ke file HTML Chrome.`);
+  }
 
   const scrollGrid = (key, direction) => {
     const el = gridScrollRefs.current[key];
@@ -508,27 +690,69 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Section 2: Category Navbar (Simple & Clean) */}
-        <section className="category-section" aria-label="Navigasi Kategori">
-          <button className="nav-arrow left" onClick={() => scrollCategories(-1)} aria-label="Geser kategori ke kiri">
-            {icons.arrowLeft}
-          </button>
-          <div className="category-track" ref={categoryScrollRef}>
-            {categoryNames.map((name) => (
-              <button
-                key={name}
-                className={activeCategory === name ? 'cat-item active' : 'cat-item'}
-                onClick={() => selectCategory(name)}
-              >
-                <span>{name}</span>
-                <span className="cat-badge">{counts(name)}</span>
-              </button>
-            ))}
+        {/* Category navigation and collection actions */}
+        <section className="category-section" aria-label="Navigasi dan pengelolaan bookmark">
+          <div className="category-menu-anchor" ref={categoryMenuRef}>
+            <button
+              type="button"
+              className="category-menu-trigger"
+              aria-haspopup="menu"
+              aria-expanded={categoryMenuOpen}
+              onClick={() => setCategoryMenuOpen((open) => !open)}
+            >
+              <span className="category-trigger-copy">
+                <span className="category-trigger-label">KATEGORI</span>
+                <span className="category-trigger-name">{activeCategory}</span>
+              </span>
+              <span className="category-trigger-count">{counts(activeCategory)}</span>
+              <span className={categoryMenuOpen ? 'category-trigger-chevron open' : 'category-trigger-chevron'}>{icons.chevron}</span>
+            </button>
+            {categoryMenuOpen && (
+              <div className="category-menu-list" role="menu" aria-label="Pilih kategori">
+                {['Semua bookmark', 'Favorit', ...categoryOptions].map((name, index) => (
+                  <button
+                    key={`${name}-${index}`}
+                    type="button"
+                    role="menuitem"
+                    className={activeCategory === name ? 'category-menu-item active' : 'category-menu-item'}
+                    style={index > 1 ? { paddingLeft: `${12 + (name.split(' / ').length - 1) * 14}px` } : undefined}
+                    onClick={() => selectCategory(name)}
+                  >
+                    <span>{name}</span>
+                    <span className="category-menu-count">{counts(name)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-          <button className="nav-arrow right" onClick={() => scrollCategories(1)} aria-label="Geser kategori ke kanan">
-            {icons.arrowRight}
-          </button>
+
+          <div className="collection-actions-anchor" ref={actionsMenuRef}>
+            <button
+              type="button"
+              className="collection-actions-trigger"
+              aria-haspopup="menu"
+              aria-expanded={actionsMenuOpen}
+              onClick={() => setActionsMenuOpen((open) => !open)}
+            >
+              <span aria-hidden="true">•••</span> Kelola
+            </button>
+            {actionsMenuOpen && (
+              <div className="collection-actions-menu" role="menu" aria-label="Kelola bookmark">
+                <button type="button" role="menuitem" onClick={() => { setCategoryFeedback(''); setEditingCategory(''); setManagerBookmarkId(''); setManagerTargetCategory(''); setManagerSourceCategory(''); setCategoryManagerOpen(true); setActionsMenuOpen(false); }}>
+                  Kelola kategori
+                </button>
+                <button type="button" role="menuitem" onClick={() => { setActionsMenuOpen(false); importInputRef.current?.click(); }}>
+                  Impor bookmark HTML
+                </button>
+                <button type="button" role="menuitem" onClick={exportBookmarks} disabled={!bookmarks.length}>
+                  Ekspor ke Chrome
+                </button>
+              </div>
+            )}
+          </div>
+          <input ref={importInputRef} className="visually-hidden-input" type="file" accept=".html,text/html" onChange={previewImportFile} aria-label="Pilih file HTML bookmark" />
         </section>
+        {actionNotice && <div className="action-notice" role="status">{actionNotice}<button type="button" onClick={() => setActionNotice('')} aria-label="Tutup pesan">×</button></div>}
 
         {/* Section Header & View Options */}
         <div className="content-toolbar">
@@ -584,19 +808,12 @@ export default function Home() {
 
             return (
               <div className="section-block" key={section.key}>
-                <div
+                <button
+                  type="button"
                   className="section-header-title clickable"
-                  role="button"
-                  tabIndex={0}
                   aria-expanded={!isCollapsed}
                   aria-controls={`${section.key.replace(/[^a-z0-9_-]/gi, '-')}-content`}
                   onClick={() => toggleSectionCollapse(section.key)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      toggleSectionCollapse(section.key);
-                    }
-                  }}
                 >
                   <div className="section-title-left">
                     <span className={isCollapsed ? 'section-chevron collapsed' : 'section-chevron'}>
@@ -605,7 +822,7 @@ export default function Home() {
                     <h2>{section.title}</h2>
                     <span className="badge">{section.count || section.items.length}</span>
                   </div>
-                </div>
+                </button>
 
                 {!isCollapsed && (
                   <div className="grid-wrapper" id={`${section.key.replace(/[^a-z0-9_-]/gi, '-')}-content`}>
@@ -818,6 +1035,153 @@ export default function Home() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {categoryManagerOpen && (
+        <div className="modal-backdrop" onMouseDown={() => setCategoryManagerOpen(false)}>
+          <div
+            className="modal category-manager-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="category-manager-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">Ruang kerja</p>
+                <h2 id="category-manager-title">Kelola kategori</h2>
+                <p className="manager-intro">Ganti nama folder atau pindahkan bookmark tanpa menghapus tautannya.</p>
+              </div>
+              <button type="button" className="close-button" onClick={() => setCategoryManagerOpen(false)} aria-label="Tutup kelola kategori">×</button>
+            </div>
+
+            {categoryFeedback && <p className="manager-feedback" role="status">{categoryFeedback}</p>}
+
+            <form className="manager-action-panel" onSubmit={createCategory}>
+              <div className="manager-panel-heading">
+                <strong>Buat kategori</strong>
+                <span>Kategori baru langsung memiliki bookmark pertama.</span>
+              </div>
+              <div className="manager-form-row create-category-row">
+                <input
+                  value={categoryDraft}
+                  onChange={(event) => setCategoryDraft(event.target.value)}
+                  placeholder="Contoh: Kerja / Desain"
+                  aria-label="Nama kategori baru"
+                  required
+                />
+                <select value={managerBookmarkId} onChange={(event) => setManagerBookmarkId(event.target.value)} aria-label="Bookmark untuk kategori baru" required>
+                  <option value="">Pilih bookmark…</option>
+                  {bookmarks.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+                </select>
+                <button className="manager-primary-button" type="submit" disabled={!bookmarks.length}>Buat</button>
+              </div>
+            </form>
+
+            <form className="manager-action-panel" onSubmit={moveManagedBookmark}>
+              <div className="manager-panel-heading">
+                <strong>Pindahkan satu bookmark</strong>
+                <span>Perubahan ini ikut tersimpan ke akunmu.</span>
+              </div>
+              <div className="manager-form-row move-bookmark-row">
+                <select value={managerBookmarkId} onChange={(event) => setManagerBookmarkId(event.target.value)} aria-label="Pilih bookmark yang dipindahkan" required>
+                  <option value="">Pilih bookmark…</option>
+                  {bookmarks.map((item) => <option key={item.id} value={item.id}>{item.title} · {item.category || 'Tanpa folder'}</option>)}
+                </select>
+                <select value={managerTargetCategory} onChange={(event) => setManagerTargetCategory(event.target.value)} aria-label="Pilih kategori tujuan" required>
+                  <option value="">Kategori tujuan…</option>
+                  {categoryOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+                <button className="manager-secondary-button" type="submit">Pindahkan</button>
+              </div>
+            </form>
+
+            <div className="manager-category-list">
+              <div className="manager-list-heading">
+                <strong>Folder saat ini</strong>
+                <span>{categoryOptions.length} kategori</span>
+              </div>
+              {categoryOptions.length ? categoryOptions.map((name) => (
+                <div className="manager-category-row" key={name}>
+                  {editingCategory === name ? (
+                    <form className="manager-rename-form" onSubmit={(event) => renameCategory(event, name)}>
+                      <input autoFocus value={categoryNameDraft} onChange={(event) => setCategoryNameDraft(event.target.value)} aria-label={`Nama baru untuk ${name}`} />
+                      <button className="manager-primary-button" type="submit">Simpan</button>
+                      <button className="manager-quiet-button" type="button" onClick={() => setEditingCategory('')}>Batal</button>
+                    </form>
+                  ) : (
+                    <>
+                      <span className="manager-category-name" title={name}>{name}</span>
+                      <span className="manager-category-count">{counts(name)}</span>
+                      <button className="manager-quiet-button" type="button" onClick={() => { setEditingCategory(name); setCategoryNameDraft(name); setCategoryFeedback(''); }}>Ubah nama</button>
+                    </>
+                  )}
+                </div>
+              )) : <p className="manager-empty">Kategori muncul di sini setelah ada bookmark di dalamnya.</p>}
+            </div>
+
+            <form className="manager-action-panel bulk-move-panel" onSubmit={(event) => { event.preventDefault(); moveCategoryItems(managerSourceCategory, managerTargetCategory); }}>
+              <div className="manager-panel-heading">
+                <strong>Pindahkan seluruh isi folder</strong>
+                <span>Folder sumber akan hilang setelah semua bookmark dipindahkan.</span>
+              </div>
+              <div className="manager-form-row">
+                <select value={managerSourceCategory} onChange={(event) => setManagerSourceCategory(event.target.value)} aria-label="Pilih kategori sumber">
+                  <option value="">Folder sumber…</option>
+                  {categoryOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+                <select value={managerTargetCategory} onChange={(event) => setManagerTargetCategory(event.target.value)} aria-label="Pilih folder tujuan">
+                  <option value="">Folder tujuan…</option>
+                  {categoryOptions.filter((name) => name !== managerSourceCategory && !name.startsWith(`${managerSourceCategory} / `)).map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+                <button className="manager-secondary-button" type="submit">Pindahkan semua</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {importPreview && (
+        <div className="modal-backdrop" onMouseDown={() => !importBusy && setImportPreview(null)}>
+          <div
+            className="modal import-preview-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="import-preview-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">Impor Chrome</p>
+                <h2 id="import-preview-title">Tinjau bookmark</h2>
+                <p className="manager-intro">{importPreview.fileName}</p>
+              </div>
+              <button type="button" className="close-button" onClick={() => !importBusy && setImportPreview(null)} aria-label="Tutup pratinjau impor">×</button>
+            </div>
+            <div className="import-summary">
+              <strong>{importPreview.bookmarks.length} bookmark siap diimpor</strong>
+              <span>{importPreview.skipped} duplikat atau tautan tidak didukung dilewati.</span>
+            </div>
+            {importError && <p className="form-error" role="alert">{importError}</p>}
+            <div className="import-preview-list">
+              {importPreview.bookmarks.slice(0, 80).map((item, index) => (
+                <div className="import-preview-row" key={`${item.url}-${index}`}>
+                  <span className="import-preview-title">{item.title}</span>
+                  <span className="import-preview-url">{item.url}</span>
+                  <span className="import-preview-category">{item.category}</span>
+                </div>
+              ))}
+              {importPreview.bookmarks.length > 80 && <p className="manager-empty">Menampilkan 80 pertama dari {importPreview.bookmarks.length} bookmark.</p>}
+              {!importPreview.bookmarks.length && <p className="manager-empty">Tidak ada bookmark baru untuk diimpor.</p>}
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="cancel-button" disabled={importBusy} onClick={() => setImportPreview(null)}>Batal</button>
+              <button type="button" className="save-button" disabled={importBusy || !importPreview.bookmarks.length} onClick={confirmImport}>
+                {importBusy ? 'Menyimpan…' : `Impor ${importPreview.bookmarks.length} bookmark`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
